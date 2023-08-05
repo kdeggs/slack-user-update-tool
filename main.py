@@ -1,3 +1,4 @@
+import ast
 import os
 
 import functions_framework
@@ -120,6 +121,8 @@ def process_user(body):
     if enable is None:
         print('🔴 Error processing because the enable value is not set')
         return
+    else:
+        enable = ast.literal_eval(enable)
 
     groups = groups.split(',') if groups else None
 
