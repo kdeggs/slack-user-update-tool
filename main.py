@@ -136,7 +136,7 @@ def http_entrypoint(request):
 
     if secret != 'geaux-cajuns':
         print('Unauthorized caller!!! Aborting request')
-        return 'UNAUTHORIZED'
+        return 'UNAUTHORIZED', 401
 
     if request.json:
         body = request.json
@@ -145,6 +145,6 @@ def http_entrypoint(request):
             process_user(user)
     else:
         print('Missing JSON body!!! Canceling request')
-        return 'BAD_REQUEST'
+        return 'BAD_REQUEST', 400
 
     return 'OK'
