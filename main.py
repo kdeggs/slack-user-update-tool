@@ -1,6 +1,6 @@
-import csv
 import os
 
+import functions_framework
 import requests
 from dotenv import load_dotenv
 from slack_bolt import App
@@ -36,8 +36,8 @@ def add_user_to_group(user_id, group_name):
         requests.patch(group_url, headers=headers, json=data)
 
 
-def add_user_to_slack(first_name, last_name, title, email, phone, user_type, year=None, birthday=None,
-                      user_groups=None):
+def sync_user_with_slack(first_name, last_name, title, email, phone, user_type, enable, year=None, birthday=None,
+                         user_groups=None):
     response = scim_client.search_users(filter=f'userName eq "{email}"', start_index=1, count=1)
     users = response.users
 
@@ -47,15 +47,22 @@ def add_user_to_slack(first_name, last_name, title, email, phone, user_type, yea
         display_name='',
         title=title,
         emails=[UserEmail(value=email)],
-        phone_numbers=[UserPhoneNumber(value=phone)]
+        phone_numbers=[UserPhoneNumber(value=phone)],
+        active=True
     )
 
-    if user_type == 'STAFF':
+    if user_groups and 'coaches' in user_groups:
         user.display_name = f'Coach {last_name}'
 
     if users and len(users) > 0:
         print(f'❗️{first_name} {last_name} already exists so this will only update the user')
         existing_user = users[0]
+
+        if not enable:
+            print('❗❗❗This user has been set to deactivated and will now be deactivated❗❗❗')
+            scim_client.delete_user(existing_user.id)
+            return
+
         user.id = existing_user.id
         user_id = scim_client.update_user(user).user.id
     else:
@@ -75,16 +82,18 @@ def add_user_to_slack(first_name, last_name, title, email, phone, user_type, yea
             add_user_to_group(user_id, group)
 
 
-def process_row(csv_row):
-    first_name = csv_row.get('first_name')
-    last_name = csv_row.get('last_name')
-    user_type = csv_row.get('type')
-    title = csv_row.get('title')
-    email = csv_row.get('email')
-    phone = csv_row.get('phone')
-    year = csv_row.get('year')
-    birthday = csv_row.get('birthday')
-    groups = csv_row.get('groups')
+def process_user(body):
+    acceptable_types = ['STAFF', 'PLAYER', 'RECRUIT', 'GUEST']
+    first_name = body.get('first_name')
+    last_name = body.get('last_name')
+    user_type = body.get('type')
+    title = body.get('title')
+    email = body.get('email')
+    phone = body.get('phone')
+    year = body.get('year')
+    birthday = body.get('birthday')
+    groups = body.get('groups')
+    enable = body.get('enable')
 
     if first_name and last_name:
         print(f'🟡 Beginning to process user with name {first_name} {last_name}')
@@ -97,34 +106,45 @@ def process_row(csv_row):
             if not year or not birthday:
                 print('🔴 Error processing because the player is missing their year, birthday, or both')
                 return
-        elif user_type != 'STAFF':
-            print('🔴 Error processing because the type is not PLAYER or STAFF')
+        elif user_type not in acceptable_types:
+            print(f'🔴 Error processing because the type is not one of {acceptable_types}')
             return
     else:
         print('🔴 Error processing this user because there is no type')
         return
 
     if not title or not email or not phone:
-        print('🔴 Error processing because there is not title, email, phone, or a combination of values')
+        print('🔴 Error processing because there is not a title, email, phone, or a combination of these values')
+        return
+
+    if enable is None:
+        print('🔴 Error processing because the enable value is not set')
         return
 
     groups = groups.split(',') if groups else None
 
-    add_user_to_slack(first_name, last_name, title, email, phone, user_type, year, birthday, groups)
+    sync_user_with_slack(first_name, last_name, title, email, phone, user_type, enable, year, birthday, groups)
 
-    print(f'🟢 Successfully added or updated user {first_name} {last_name} in Slack\n')
+    print(f'🟢 Successfully added, updated or disabled user {first_name} {last_name} in Slack\n')
 
 
-print('⚾️⚾️⚾️ Cajuns Baseball Slack User Importer Tool ⚾️⚾️⚾️')
+@functions_framework.http
+def http_entrypoint(request):
+    print('⚾️⚾️⚾️ Cajuns Baseball Slack User Importer Tool ⚾️⚾️⚾️')
 
-file_name = input('\n\nEnter the file name of the CSV: ')
+    secret = request.headers.get('secret')
 
-try:
-    with open(file_name, mode='r') as file:
-        csv_reader = csv.DictReader(file)
-        rows = list(csv_reader)
-        print(f'\n📢 Beginning to import {len(rows)} user/s')
-        for row in rows:
-            process_row(row)
-except FileNotFoundError:
-    print(f'\nSorry 😢 there was no file found with name {file_name}')
+    if secret != 'geaux-cajuns':
+        print('Unauthorized caller!!! Aborting request')
+        return 'UNAUTHORIZED'
+
+    if request.json:
+        body = request.json
+
+        for user in body:
+            process_user(user)
+    else:
+        print('Missing JSON body!!! Canceling request')
+        return 'BAD_REQUEST'
+
+    return 'OK'
