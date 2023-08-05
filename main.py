@@ -68,7 +68,7 @@ def sync_user_with_slack(first_name, last_name, title, email, phone, user_type, 
     else:
         user_id = scim_client.create_user(user).user.id
 
-    if user_type != 'STAFF':
+    if user_type == 'PLAYER':
         custom_fields = {
             'fields': {
                 'Xf05DNLNQQ0P': {'value': year, 'alt': ''},
