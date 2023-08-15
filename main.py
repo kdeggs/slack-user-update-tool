@@ -37,8 +37,7 @@ def add_user_to_group(user_id, group_name):
         requests.patch(group_url, headers=headers, json=data)
 
 
-def sync_user_with_slack(first_name, last_name, title, email, phone, user_type, enable, year=None, birthday=None,
-                         user_groups=None):
+def sync_user_with_slack(first_name, last_name, title, email, phone, user_type, enable, year=None, user_groups=None):
     response = scim_client.search_users(filter=f'userName eq "{email}"', start_index=1, count=1)
     users = response.users
 
@@ -73,7 +72,6 @@ def sync_user_with_slack(first_name, last_name, title, email, phone, user_type, 
         custom_fields = {
             'fields': {
                 'Xf05DNLNQQ0P': {'value': year, 'alt': ''},
-                'Xf05FH4RDALB': {'value': birthday, 'alt': ''}
             }
         }
         app.client.users_profile_set(user=user_id, profile=custom_fields)
@@ -92,7 +90,6 @@ def process_user(body):
     email = body.get('email')
     phone = body.get('phone')
     year = body.get('year')
-    birthday = body.get('birthday')
     groups = body.get('groups')
     enable = body.get('enable')
 
@@ -104,8 +101,8 @@ def process_user(body):
 
     if user_type:
         if user_type == 'PLAYER':
-            if not year or not birthday:
-                print('🔴 Error processing because the player is missing their year, birthday, or both')
+            if not year:
+                print('🔴 Error processing because the player is missing their year')
                 return
         elif user_type not in acceptable_types:
             print(f'🔴 Error processing because the type is not one of {acceptable_types}')
@@ -126,7 +123,7 @@ def process_user(body):
 
     groups = groups.split(',') if groups else None
 
-    sync_user_with_slack(first_name, last_name, title, email, phone, user_type, enable, year, birthday, groups)
+    sync_user_with_slack(first_name, last_name, title, email, phone, user_type, enable, year, groups)
 
     print(f'🟢 Successfully added, updated or disabled user {first_name} {last_name} in Slack\n')
 
